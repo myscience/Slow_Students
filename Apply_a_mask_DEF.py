@@ -1,24 +1,14 @@
-'''
+
 def Inside_outside_check(point, contours):
+    #Mi raccomando Contours lo si deve passare come Contours[0]
 
-    import cv2
-    import numpy as np
-    for i in range(len(contours)):
-        answer = cv2.pointPolygonTest(contours[i], point,False)
-    return(answer)
+    from shapely.geometry import Point
+    from shapely.geometry.polygon import Polygon
 
-    from shapely.geometry import Point, Polygon
-    import cv2
+    point = Point(point)
+    polygon = Polygon(contours)
+    return(polygon.contains(point))
 
-    contours_array = np.asarray(contours)
-
-    for i in range(len(contours)):
-        poly = Polygon(contours[i])
-    answer = cv2.pointPolygonTest(poly, point,False)
-    #answer = point.within(poly)
-    return answer
-
-    '''
 #-------------------------------------------------------------------------------
 
 def Make_a_rectangoular_crop(img, topx, topy, bottomx, bottomy):
@@ -80,32 +70,9 @@ def Apply_a_mask(img_float, Contours_Limit):
 
     return(contours)
 
-#------------------------------Rectangoular cut---------------------------------
-'''
-    #Now crop
-    contour_position_x=[]
-    contour_position_y=[]
-
-    #print mask [30][2]
-    for i in range(len(mask)):
-        for j in range(len(mask)):
-                #print mask [i][:][:]
-                if (np.array_equal(mask[i][j], [255., 0., 0.])):
-                    contour_position_x.append([i])
-                    contour_position_y.append(j)
-
-    (topx, topy) = (np.min(contour_position_x), np.min(contour_position_y))
-    (bottomx, bottomy) = (np.max(contour_position_x), np.max(contour_position_y))
-    #print topx, topy
-    #print bottomx, bottomy
-    cropped  = img_float[topx:bottomx, topy:bottomy]
-    plt.matshow(cropped)
-    plt.show()
-    return(cropped)
-'''
 #-------------------------------------------------------------------------------
 
-
+'''
 import numpy as np
 from PIL import Image
 import skimage
@@ -124,8 +91,8 @@ img_DOWN = Make_a_rectangoular_crop(img_float, 19, 0, 100, 100)
 
 Contours_UP = Apply_a_mask(img_UP, 0.1635)
 Contours_DOWN = Apply_a_mask(img_DOWN, 0.197)
-#print Contours_DOWN
 
 #point = (30,30)
-#answer=Inside_outside_check(point, Contours_DOWN)
+#answer=Inside_outside_check(point, Contours_DOWN[0)
 #print answer
+'''
