@@ -45,22 +45,6 @@ for i in range(1, 1001):
 # Load all the collection of the images
 img_collection_float = img_as_float(io.imread_collection(img_path_list))
 
-'''
-DA RICONTROLLARE IL BACKGROUND
-img_background = np.zeros((100, 100), np.float64)
-
-# Evaluate the background of the images as the mean over the whole set
-for i in img_collection_float:
-    # Convert all images to float, range -1 to 1, to avoid dangerous overflows
-    img_background += i
-
-img_background /= len(img_collection_float)
-
-# Substract from each image the background
-for i in img_collection_float:
-    i -= img_background
-'''
-
 img_collection_UP = []
 img_collection_DOWN = []
 
@@ -78,6 +62,20 @@ Contours_DOWN = Find_a_mask(img_collection_DOWN)
 #DA VELOCIZZARE QUESTO PUNTO
 '''
 img_collection_DOWN = Apply_a_mask(img_collection_DOWN, Contours_DOWN, DIM_X, DIM_Y)
+
+
+img_background = np.zeros((DIM_X, DIM_Y), np.float64)
+
+# Evaluate the background of the images as the mean over the whole set
+for i in img_collection_DOWN:
+    # Convert all images to float, range -1 to 1, to avoid dangerous overflows
+    img_background += i
+
+img_background /= len(img_collection_DOWN)
+
+# Substract from each image the background
+for i in img_collection_DOWN:
+    i -= img_background
 
 
 # Now we need to reduce the noise from the images by performing a spatial smoothing
