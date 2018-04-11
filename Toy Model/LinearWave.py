@@ -5,9 +5,11 @@ import matplotlib.pyplot as plt
 import math
 from matplotlib.ticker import MultipleLocator
 from matplotlib import cm
-from skimage import img_as_float, img_as_uint
 
 import imageio
+
+# Needed to handle exits properly
+import sys, traceback
 
 class LinearWave:
 
@@ -42,6 +44,10 @@ class LinearWave:
         self.y0 = 0.
         self.y1 = 0.
 
+        # Parameters needed for the .gif saving
+        self.savetoGif = False
+        self.img_colletion = []
+
     def computeWave(self, pivot, k):
         self.pivot = pivot
         self.k = k
@@ -51,18 +57,21 @@ class LinearWave:
 
         # The equation for the line is the following
         if k[1] != 0:
+            self.alert = False
             m = - (k[0] / k[1])
 
             self.x = np.arange(0, self.width, 0.01)
             self.y = pivot[1] + m * (self.x - pivot[0])
 
         else:
+            self.alert = True
             self.y = np.arange(0, self.height, 0.01)
             self.x = np.ones(len(self.y)) * pivot[0]
 
         mask = (self.y < self.height) & (self.y > 0)
 
-        if len(self.x[mask]) > 0:
+        # We check if it's not the case k[1] == 0
+        if ((len(self.x[mask]) > 0) and (not (self.alert))):
             self.x0 = min(self.x[mask])
             self.x1 = max(self.x[mask])
 
@@ -71,6 +80,14 @@ class LinearWave:
 
             self.y0 = self.y[idx_x0]
             self.y1 = self.y[idx_x1]
+
+        # This is the case k[1] == 0
+        elif ((len(self.x[mask]) > 0) and (self.alert)):
+            self.x0 = self.x1 = self.pivot[0]
+
+            # We manually set the y extremum
+            self.y0 = 0
+            self.y1 = self.height - 1e-5
 
         else:
             self.x0 = self.y0 = self.x1 = self.y1 = 0.
@@ -138,9 +155,38 @@ class LinearWave:
 
         return self.isOn[1:]
 
-    def updateWave(self, dt):
-        self.pivot[0] += self.k[0] + dt * self.velocity
-        self.pivot[1] += self.k[1] + dt * self.velocity
+    def updateWave(self, dt, style = 'random'):
+        self.pivot[0] += self.k[0] * dt * self.velocity
+        self.pivot[1] += self.k[1] * dt * self.velocity
+
+        # Check if wave is out of bound, is so we randomly regenerate one
+        if (self.pivot[0] < 0) or (self.pivot[0] >= self.width) or\
+           (self.pivot[1] < 0) or (self.pivot[1] >= self.height):
+
+           try:
+               if style == 'random':
+                   self.pivot[0] = np.random.uniform(0, self.width)
+                   self.pivot[1] = np.random.uniform(0, self.height)
+                   self.k[0] = np.random.uniform(-2, 2)
+                   self.k[1] = np.random.uniform(-2, 2)
+
+               elif style == 'v_linear':
+                   self.pivot[0] = 0
+                   self.pivot[1] = self.height / 2
+                   self.k[0] = 1.
+                   self.k[1] = 0.
+
+               elif style == 'h_linear':
+                   self.pivot[0] = self.width / 2
+                   self.pivot[1] = 0.
+                   self.k[0] = 0.
+                   self.k[1] = 1.
+
+               else:
+                   raise ValueError('Error: style %s not supported"', (style))
+           except ValueError as err:
+               traceback.print_exc(file=sys.stdout)
+               sys.exit(0)
 
     def printWave(self):
         figure, axis = plt.subplots()
@@ -164,26 +210,23 @@ class LinearWave:
 
         return figure
 
-    def run(self, dt):
-        wave.computeWave(self.pivot, self.k)
+    def run(self, dt, style = 'random'):
+        self.updateWave(dt, style)
+        self.computeWave(self.pivot, self.k)
 
-        wave.grid[:,:] = 0
-        temp = wave.isWaveOn().astype(int)
-        wave.grid[temp[:, 1], temp[:, 0]] = 1
-        img = wave.printWave()
-        wave.updateWave(dt)
+        self.grid[:,:] = 0
+        temp = self.isWaveOn().astype(int)
+        self.grid[temp[:, 1], temp[:, 0]] = 1
 
-        return img
+        if self.savetoGif:
+            img = self.printWave()
+            filename = "frames/frame_" + str(self.time) + ".png"
+            img.savefig(filename)
+            plt.close(img)
+            self.image_colletion.append(imageio.imread(filename))
 
+        return temp
 
-wave = LinearWave(20, 20, [0, 20], [1, -.54])
-
-images = []
-for i in range(30):
-    img = wave.run(1)
-    filename = "frames/frame_" + str(i) + ".png"
-    img.savefig(filename)
-    plt.close(img)
-    images.append(imageio.imread(filename))
-
-imageio.mimsave('linear_wave.gif', images)
+    # Create a gif of the hystory of the wave propagation
+    def saveAsGif(self, filename):
+        imageio.mimsave(filename, self.image_colletion)
