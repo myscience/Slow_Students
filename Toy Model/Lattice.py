@@ -4,6 +4,8 @@
 # consequances of a wave passing upon the neuro cortex
 from Pixel import Pixel
 from LinearWave import LinearWave
+from SphericalWave import SphericalWave
+
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.ticker import MultipleLocator
@@ -64,7 +66,8 @@ class Worker(Process):
 
 class Lattice:
 
-    def __init__(self, width, height, density = 1., num_wave = 1, wave_mode = ['random'], printFrame = False):
+    def __init__(self, width, height, density = 1., num_wave = 1, \
+                        wave_type = ['Spherical'], wave_mode = ['random']):
 
         # Width and Height of the Lattice
         self.width = width;
@@ -73,9 +76,7 @@ class Lattice:
         # Initialize waves number and 're-birth' mode
         self.num_waves = num_wave
         self.wave_mode = wave_mode
-
-        # Flag for frame-per-frame printing of lattice status
-        self.printFrame = printFrame
+        self.wave_type = wave_type
 
         # Current time of the simulation
         self.time = 1
@@ -99,10 +100,24 @@ class Lattice:
         self.densities = density * np.ones(width * height)
 
         # The wave that will propagate along the lattice
-        self.waves = [LinearWave(self.width, self.height, \
-            pivot = [np.random.uniform(0, self.width), np.random.uniform(0, self.height)],
-            k = [np.random.uniform(-2, 2), np.random.uniform(-2, 2)], velocity = .7) \
-            for i in range(num_wave)]
+        self.waves = []
+        for num_wave in range(self.num_waves):
+            try:
+                if self.wave_type[num_wave] == 'Linear':
+                    self.waves.append(LinearWave(self.width, self.height, \
+                        pivot = [np.random.uniform(0, self.width), np.random.uniform(0, self.height)],\
+                        k = [np.random.uniform(-2, 2), np.random.uniform(-2, 2)], velocity = np.random.uniform(0.1, 2)))
+
+                elif self.wave_type[num_wave] == 'Spherical':
+                    self.waves.append(SphericalWave(self.width, self.height, \
+                        pivot = [np.random.uniform(0, self.width), np.random.uniform(0, self.height)],\
+                        start_radius = np.random.uniform(0, 4), velocity = np.random.uniform(0.1, 2)))
+
+                else:
+                    raise ValueError('Wave type %s is not supported' % self.wave_type[num_wave])
+            except ValueError as err:
+                traceback.print_exc(file=sys.stdout)
+                sys.exit(0)
 
         # Setting up number of cores for multiprocessing
         self.num_cores = multiprocessing.cpu_count()
@@ -181,9 +196,6 @@ class Lattice:
             for i, w in enumerate(self.workers):
                 w.in_queue.put(["step", idx[i]])
 
-            if (self.printFrame):
-                self.printLattice()
-
         # We signal the Halt signal to the workers and collect the results
         for w in self.workers:
             w.in_queue.put(None)
@@ -199,43 +211,12 @@ class Lattice:
         plt.plot(self.signals[i][j])
         plt.show()
 
-    def printLattice(self):
-        figure, axis = plt.subplots()
-
-        intensities = np.zeros(self.width * self.height)
-        for p, i in zip(self.pixels, range(self.width * self.height)):
-            intensities[i] = int(p.active) * p.density
-
-        temp = self.waves[0].grid
-        for i in range(1, self.num_waves):
-            temp += self.waves[i].grid
-
-        img_grid = temp + intensities.reshape(self.width, self.height)
-        plt.imshow(img_grid, extent = (0, self.width, self.height, 0), interpolation='nearest', cmap = cm.coolwarm)
-        plt.colorbar()
-
-        for i in range(self.num_waves):
-            plt.plot(self.waves[i].x, self.waves[i].y)
-            plt.plot(self.waves[i].pivot[0], self.waves[i].pivot[1], marker='o', markersize = 3, color = "red")
-            plt.plot(self.waves[i].x0, self.waves[i].y0, marker='o', markersize = 4, color = "blue")
-            plt.plot(self.waves[i].x1, self.waves[i].y1, marker='o', markersize = 4, color = "blue")
-            plt.quiver(self.waves[i].pivot[0], self.waves[i].pivot[1], self.waves[i].k[0],
-                                    self.waves[i].k[1], color='g', scale_units = 'xy')
-            plt.xlim(0, self.waves[i].width)
-            plt.ylim(0, self.waves[i].height)
-
-        spacing = 1
-        minorLocator = MultipleLocator(spacing)
-        axis.xaxis.set_minor_locator(minorLocator)
-        axis.yaxis.set_minor_locator(minorLocator)
-        plt.grid(True, which = 'minor')
-        plt.show()
-
 # Control need for Windows support
 if __name__ == '__main__':
-    width = 10
-    height = 10
-    lattice = Lattice(width, height, num_wave = 3, wave_mode = ['random', 'v_linear', 'h_linear'])
+    width = 20
+    height = 20
+    lattice = Lattice(width, height, num_wave = 2, wave_type = ['Spherical', 'Spherical'], \
+                                            wave_mode = ['random', 'random'])
     lattice.setPixelsDensities(np.random.normal(loc = 5, scale = 2, size = (width * height)))
 
     lattice.runSimulation(300)

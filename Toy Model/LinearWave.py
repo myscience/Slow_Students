@@ -183,42 +183,32 @@ class LinearWave:
                    self.k[1] = 1.
 
                else:
-                   raise ValueError('Error: style %s not supported"', (style))
+                   raise ValueError('Error in LinearWave: style %s not supported"', (style))
            except ValueError as err:
                traceback.print_exc(file=sys.stdout)
                sys.exit(0)
 
-    def printWave(self):
-        figure, axis = plt.subplots()
+    def printWave(self, figure, axis):
 
-        plt.imshow(self.grid, extent = (0, self.width, self.height, 0), interpolation='nearest', cmap = cm.coolwarm)
-        plt.colorbar()
+        axis.plot(self.x, self.y)
+        axis.plot(self.pivot[0], self.pivot[1], marker='o', markersize = 3, color = "red")
+        axis.plot(self.x0, self.y0, marker='o', markersize = 4, color = "blue")
+        axis.plot(self.x1, self.y1, marker='o', markersize = 4, color = "blue")
+        axis.quiver(self.pivot[0], self.pivot[1], self.k[0], self.k[1], color='g', scale_units = 'xy')
 
-        plt.plot(self.x, self.y)
-        plt.plot(self.pivot[0], self.pivot[1], marker='o', markersize = 3, color = "red")
-        plt.plot(self.x0, self.y0, marker='o', markersize = 4, color = "blue")
-        plt.plot(self.x1, self.y1, marker='o', markersize = 4, color = "blue")
-        plt.quiver(self.pivot[0], self.pivot[1], self.k[0], self.k[1], color='g', scale_units = 'xy')
-        plt.xlim(0, self.width)
-        plt.ylim(0, self.height)
+        return figure, axis
 
-        spacing = 1
-        minorLocator = MultipleLocator(spacing)
-        axis.xaxis.set_minor_locator(minorLocator)
-        axis.yaxis.set_minor_locator(minorLocator)
-        plt.grid(True, which = 'minor')
+    def run(self, t, style = 'random'):
+        for dt in range(t):
+            self.updateWave(1, style)
+            self.computeWave(self.pivot, self.k)
 
-        return figure
-
-    def run(self, dt, style = 'random'):
-        self.updateWave(dt, style)
-        self.computeWave(self.pivot, self.k)
-
-        self.grid[:,:] = 0
-        temp = self.isWaveOn().astype(int)
-        self.grid[temp[:, 1], temp[:, 0]] = 1
+            temp = self.isWaveOn().astype(int)
 
         if self.savetoGif:
+            self.grid[:,:] = 0
+            self.grid[temp[:, 1], temp[:, 0]] = 1
+
             img = self.printWave()
             filename = "frames/frame_" + str(self.time) + ".png"
             img.savefig(filename)
