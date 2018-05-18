@@ -64,3 +64,6 @@ class Pixel :
 
         if self.Neurons[0].state == False:
             self.active = False
+
+        else:
+            self.active = True
