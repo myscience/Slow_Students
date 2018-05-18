@@ -5,17 +5,21 @@
 from Pixel import Pixel
 from LinearWave import LinearWave
 from SphericalWave import SphericalWave
+from EllipticalWave import EllipticalWave
 
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.ticker import MultipleLocator
 from matplotlib import cm
 
+from collections import OrderedDict
+
 # Needed for proper terminal output
 from sys import stdout, stderr
 
 # Needed to handle exits properly
 import sys, traceback
+from CustomException import ExpiredException, StyleException
 
 # Needed for parallelization
 import multiprocessing
@@ -34,6 +38,8 @@ class Worker(Process):
 
         self.width = width
         self.height = height
+
+        print "Worker %s is now active" % self
 
     def run(self):
         while True:
@@ -54,6 +60,24 @@ class Worker(Process):
                     for p in self.pixels:
                         p.stepSimulation()
 
+                elif msg[0] == "init":
+                    for key in msg[1]:
+                        # Now we set the schedule for all the neurons in this pixel
+                        for neuron in self.pixels[key].Neurons:
+                            neuron.setActiveAt((msg[1])[key])
+
+                    print self, "Has finished Initialization"
+
+                elif msg[0] == "run":
+                    print self, "Is Starting Simulation"
+                    for dt in range(msg[1]):
+                        for p in self.pixels:
+                            p.stepSimulation()
+
+                elif msg[0] == "just_step":
+                    for p in self.pixels:
+                        p.stepSimulation()
+
                 else:
                     print "Warning: message parsing failed"
                     pass
@@ -66,58 +90,17 @@ class Worker(Process):
 
 class Lattice:
 
-    def __init__(self, width, height, density = 1., num_wave = 1, \
-                        wave_type = ['Spherical'], wave_mode = ['random']):
+    def __init__(self, density = 1.):
 
         # Width and Height of the Lattice
         self.width = width;
         self.height = height;
 
-        # Initialize waves number and 're-birth' mode
-        self.num_waves = num_wave
-        self.wave_mode = wave_mode
-        self.wave_type = wave_type
+        # Matrix storing the density of neurons for each pixel
+        self.densities = density * np.ones(width * height)
 
         # Current time of the simulation
         self.time = 1
-
-        try:
-            if len(self.wave_mode) != self.num_waves:
-                print len(self.wave_mode), self.num_waves
-                raise ValueError('Lenght of wave_mode differs from the number of waves passed')
-        except ValueError as err:
-            traceback.print_exc(file=sys.stdout)
-            sys.exit(0)
-
-        # We print the Initialization parameters of the simulation
-        status = "\nINITIALIZING SIMULATION.\n" +\
-                 "Width: %d" % self.width + "\tHeight: %d" % self.height +\
-                 "\nNumber of waves: %d" %self.num_waves +\
-                 "\nWaves rebirth mode: %s\n" % self.wave_mode
-
-        print status
-
-        self.densities = density * np.ones(width * height)
-
-        # The wave that will propagate along the lattice
-        self.waves = []
-        for num_wave in range(self.num_waves):
-            try:
-                if self.wave_type[num_wave] == 'Linear':
-                    self.waves.append(LinearWave(self.width, self.height, \
-                        pivot = [np.random.uniform(0, self.width), np.random.uniform(0, self.height)],\
-                        k = [np.random.uniform(-2, 2), np.random.uniform(-2, 2)], velocity = np.random.uniform(0.1, 2)))
-
-                elif self.wave_type[num_wave] == 'Spherical':
-                    self.waves.append(SphericalWave(self.width, self.height, \
-                        pivot = [np.random.uniform(0, self.width), np.random.uniform(0, self.height)],\
-                        start_radius = np.random.uniform(0, 4), velocity = np.random.uniform(0.1, 2)))
-
-                else:
-                    raise ValueError('Wave type %s is not supported' % self.wave_type[num_wave])
-            except ValueError as err:
-                traceback.print_exc(file=sys.stdout)
-                sys.exit(0)
 
         # Setting up number of cores for multiprocessing
         self.num_cores = multiprocessing.cpu_count()
@@ -142,6 +125,137 @@ class Lattice:
         # We start our workers
         for w in self.workers:
             w.start()
+
+    @classmethod
+    def initWithWaves(cls, width, height, wave_dict, density = 1.):
+        # Width and Height of the Lattice
+        cls.width = width
+        cls.height = height
+
+        # Initialize waves number and 're-birth' mode
+        cls.num_waves = wave_dict['num_wave']
+        cls.wave_mode = wave_dict['wave_mode']
+        cls.wave_type = wave_dict['wave_type']
+        cls.wave_lifespan = wave_dict['wave_lifespan']
+
+        try:
+            if len(cls.wave_mode) != cls.num_waves:
+                print len(cls.wave_mode), cls.num_waves
+                raise ValueError('Lenght of wave_mode differs from the number of waves passed')
+
+            if len(cls.wave_type) != cls.num_waves:
+                raise ValueError('Length of wave_type differs from the number of waves passed')
+
+            if len(cls.wave_lifespan) != cls.num_waves:
+                raise ValueError('Length of wave_lifespan differs from the number of waves passed')
+
+        except ValueError as err:
+            traceback.print_exc(file=sys.stdout)
+            sys.exit(0)
+
+        # We print the Initialization parameters of the simulation
+        status = "\nINITIALIZING SIMULATION.\n" +\
+                 "Width: %d" % cls.width + "\tHeight: %d" % cls.height +\
+                 "\nNumber of waves: %d" %cls.num_waves +\
+                 "\nWave types: %s" % cls.wave_type +\
+                 "\nWaves rebirth mode: %s" % cls.wave_mode +\
+                 "\nWaves lifespan: %s\n" % cls.wave_lifespan
+
+        print status
+
+        # The wave that will propagate along the lattice
+        cls.waves = []
+        for wave_type, wave_mode, wave_lifespan in zip(cls.wave_type, cls.wave_mode, cls.wave_lifespan):
+            try:
+                if wave_type == 'Linear':
+                    cls.waves.append(LinearWave(cls.width, cls.height, \
+                        pivot = [np.random.uniform(0, cls.width), np.random.uniform(0, cls.height)],\
+                        angle = np.random.uniform(0., 2. * np.pi), velocity = np.random.uniform(0.1, 2),\
+                        acceleration = np.random.uniform(-0.1, 0.1), style =  wave_mode,\
+                        lifespan = wave_lifespan))
+
+                elif wave_type == 'Spherical':
+                    cls.waves.append(SphericalWave(cls.width, cls.height, \
+                        pivot = [np.random.uniform(0, cls.width), np.random.uniform(0, cls.height)],\
+                        start_radius = np.random.uniform(0, 4), \
+                        velocity = np.random.uniform(0.1, 2), \
+                        acceleration = np.random.uniform(-0.1, 0.1),\
+                        lifespan = wave_lifespan, style =  wave_mode))
+
+                elif wave_type == 'Elliptical':
+                    cls.waves.append(EllipticalWave(cls.width, cls.height,\
+                        pivot = [np.random.uniform(0, cls.width), np.random.uniform(0, cls.height)], \
+                        start_radius = [np.random.uniform(0, 2.), np.random.uniform(0, 2.)], \
+                        start_angle = np.random.uniform(0, 360),
+                        velocity = [np.random.uniform(0.1, 1.), np.random.uniform(0., 1.)],\
+                        acceleration = [np.random.uniform(-0.1, 0.1), np.random.uniform(-0.1, 0.1)],\
+                        lifespan = wave_lifespan, style = wave_mode))
+
+                else:
+                    raise ValueError('Wave type %s is not supported' % wave_type)
+            except ValueError as err:
+                traceback.print_exc(file=sys.stdout)
+                sys.exit(0)
+
+        cls.has_waves = True
+        cls.loadedFile = False
+
+        return cls(density = density)
+
+    @classmethod
+    def initiFromFile(cls, width, height, filename, delimiter = '[', density = 1.):
+        cls.width = width
+        cls.height = height
+
+        print "\n\tINITIALIZING SIMULATION FROM FILE\n"
+        print "Loading...",
+        # Here we load the file
+        with open(filename) as f:
+            # We built is as a dict with key = pixel-ID ; value = activation-time
+            cls.trans_dict = OrderedDict()
+            cls.last_up_time = -1
+            cls.first_up_time = 1E9
+            last_id = -1
+            first_id = -1
+
+            for line in f:
+                pos = line.find('[')
+                key = int(line[:pos])
+                try:
+                    value = [int(float(x)) for x in line[pos + 1:-3].split(",")]
+
+                    # We keep track of the first and last up transition
+                    if cls.last_up_time < max(value):
+                        cls.last_up_time = max(value)
+                        last_id = np.argmax(value)
+                        key_last = key
+
+                    if cls.first_up_time > min(value):
+                        cls.first_up_time = min(value)
+                        first_id = np.argmin(value)
+                        key_first = key
+
+
+
+                except ValueError as err:
+                    value = []
+
+                cls.trans_dict[key] = value
+
+        print "Completed!"
+
+        if cls.trans_dict.keys()[-1] + 1 != cls.width * cls.height:
+            print "\nError on initiFromFile: pixels-IDs do not math simulation dimentions"
+            print "Max pixels-ID is %d while Width x Height is %d\n" % (cls.trans_dict.keys()[-1] + 1, cls.width * cls.height)
+            sys.exit(-1)
+
+        print "First up transition detected at time T = %d for ID = %d" % (cls.first_up_time, key_first)
+        print "Last up transition detected at time T = %d for ID = %d" % (cls.last_up_time, key_last)
+
+        cls.has_waves = False
+        cls.loadedFile = True
+
+        return cls(density = density)
 
     def getPixelsDensities(self):
         return self.densities
@@ -172,40 +286,135 @@ class Lattice:
             for j in range(self.height):
                 self.signals[i][j] = self.getPixelSignal(i, j)
 
-    def runSimulation(self, total_dt):
-        for i in range(total_dt):
-            self.time += 1
+    def runWaveSimulation(self, total_dt):
+        if self.has_waves:
+            for i in range(total_dt):
+                self.time += 1
 
-            idx = [[] for i in range(self.num_cores)]
+                idx = [[] for i in range(self.num_cores)]
 
-            for i in range(self.num_waves):
-                # We collect the indices of active pixels
-                idx_actives = self.waves[i].run(1, self.wave_mode[i])
+                for wave in self.waves:
+                    # We collect the indices of active pixels
+                    try:
+                        idx_actives = wave.run(1)
 
-                # We prepare the indices to pass to the workers, splitting based on
-                # the workers indices sections
-                for i in range(len(idx_actives)):
-                    tmp = idx_actives[i][0] + idx_actives[i][1] * self.width
+                    except ExpiredException:
+                        # We need to remove wave from our list
+                        self.waves.remove(wave)
+
+                    except StyleException as err:
+                        # We signal the Halt signal to the workers and collect the results
+                        for w in self.workers:
+                            w.in_queue.put(None)
+
+                        # We terminate the processes
+                        for w in self.workers:
+                            w.terminate()
+
+                        for w in self.workers:
+                            w.join(5)
+
+                        print "PROCESSES TERMINATED"
+
+                        # Report the problem
+                        traceback.print_exc(file = sys.stderr)
+
+                        # Now we can perform a clean exit
+                        return True
+
+                    else:
+                        # We prepare the indices to pass to the workers, splitting based on
+                        # the workers indices sections
+                        for i in range(len(idx_actives)):
+                            tmp = idx_actives[i][0] + idx_actives[i][1] * self.width
+
+                            for k in range(self.num_cores):
+                                if tmp < (k + 1) * self.chunck_size:
+                                    tmp -= k * self.chunck_size
+                                    idx[k].append(tmp)
+                                    break
+
+                for i, w in enumerate(self.workers):
+                    w.in_queue.put(["step", idx[i]])
+
+            # We signal the Halt signal to the workers and collect the results
+            for w in self.workers:
+                w.in_queue.put(None)
+                # We collect the results
+                res = w.out_queue.get()
+                self.pixels[res[0] * self.chunck_size : (res[0] + 1) * self.chunck_size] = res[1]
+
+            # We join the processes
+            for w in self.workers:
+                w.join(5)
+
+            return False
+
+        else:
+            print "Cannot run Wave Simulation. No wave initialized."
+            print "Please try the Lattice.initWithWaves classmethod"
+
+            # Returning with error
+            return True
+
+        return True
+
+    def runFromFileSimulation(self, total_dt = None):
+        if self.loadedFile:
+            # We need to define the up_schedules for all the Neurons
+
+            idx = [{} for i in range(self.num_cores)]
+
+            # We iterate over the keys of the dictionary which are the pixels-ID
+            for key in self.trans_dict:
+                # We check if the list is not empty
+                if self.trans_dict[key]:
+                    # We prepare the indices to pass to the workers, splitting based on
+                    # the workers indices sections
+                    tmp = key
 
                     for k in range(self.num_cores):
                         if tmp < (k + 1) * self.chunck_size:
                             tmp -= k * self.chunck_size
-                            idx[k].append(tmp)
+                            (idx[k])[tmp] = self.trans_dict[key]
                             break
 
+            # We signal the set-up configuration
             for i, w in enumerate(self.workers):
-                w.in_queue.put(["step", idx[i]])
+                w.in_queue.put(["init", idx[i]])
 
-        # We signal the Halt signal to the workers and collect the results
-        for w in self.workers:
-            w.in_queue.put(None)
-            # We collect the results
-            res = w.out_queue.get()
-            self.pixels[res[0] * self.chunck_size : (res[0] + 1) * self.chunck_size] = res[1]
+            # Default behaviour is to simulate the whole file-induced simulation
+            if total_dt == None:
+                total_dt = self.last_up_time
 
-        # We join the processes
-        for w in self.workers:
-            w.join(5)
+
+            # We signal the run simulation
+            for w in self.workers:
+                w.in_queue.put(["run", total_dt])
+
+            self.time += total_dt
+
+            # We signal the Halt signal to the workers and collect the results
+            for w in self.workers:
+                w.in_queue.put(None)
+                # We collect the results
+                res = w.out_queue.get()
+                self.pixels[res[0] * self.chunck_size : (res[0] + 1) * self.chunck_size] = res[1]
+
+            # We join the processes
+            for w in self.workers:
+                w.join(5)
+
+            # Returning with no error
+            return False
+        else:
+            print "Cannot run FromFile Simulation. No File loaded."
+            print "Please try the Lattice.initiFromFile classmethod"
+
+            #Returning with error
+            return True
+
+        return True
 
     def printPixelSignal(self, i, j):
         plt.plot(self.signals[i][j])
@@ -213,15 +422,27 @@ class Lattice:
 
 # Control need for Windows support
 if __name__ == '__main__':
-    width = 20
-    height = 20
-    lattice = Lattice(width, height, num_wave = 2, wave_type = ['Spherical', 'Spherical'], \
-                                            wave_mode = ['random', 'random'])
-    lattice.setPixelsDensities(np.random.normal(loc = 5, scale = 2, size = (width * height)))
+    width = 50
+    height = 40
 
-    lattice.runSimulation(300)
-    lattice.collectPixelsSignal()
+    wave_dict = { 'num_wave' : 2, 'wave_type' : ['Elliptical', 'Spherical'], 'wave_mode' : ['random', 'random'], 'wave_lifespan' : ['25', 'None'] }
 
-    lattice.printPixelSignal(3, 7)
+    filename = "/home/paolo/Scrivania/Universita'/Human Brain Project/Slow Waves Project/data/min_time.txt"
 
-    lattice.pixels[0].Neurons[4].printSignal()
+    lattice = Lattice.initiFromFile(width, height, filename)
+
+    lattice.setPixelsDensities(np.random.normal(loc = 10, scale = 2, size = (width * height)))
+
+    failure = lattice.runFromFileSimulation(total_dt = 700)
+    print "SIMULATION COMPLETED.\n"
+    if not failure:
+        lattice.collectPixelsSignal()
+
+        lattice.printPixelSignal(25, 20)
+
+        lattice.pixels[1000].Neurons[4].printSignal()
+
+        print "\nLATTICE SIMULATION HAS BEEN SUCCESSFUL.\n"
+
+    else:
+        print "\nLATTICE SIMULATION HAS BEEN UNSUCCESSFUL.\n"

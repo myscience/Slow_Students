@@ -2,24 +2,25 @@
 
 import numpy as np
 import matplotlib.pyplot as plt
+import math
 from matplotlib.ticker import MultipleLocator
+from matplotlib.patches import Ellipse
 from matplotlib import cm
 
-import math
 import imageio
 
 # Needed to handle exits properly
 import sys, traceback
+
 from CustomException import ExpiredException, StyleException
 
-class SphericalWave:
+class EllipticalWave:
 
-    # We initialize a SphericalWave by giving a starting position, a point on
-    # a grid. Optionally a velocity and a resolution can be passed
-
-    def __init__(self, width, height, pivot = [0, 0], start_radius = 0., \
-                    velocity = .1, acceleration = 0., lifespan = None,\
-                    style = 'random', display = False, saveToGif = False):
+    # We initialize an EllipticalWave by giving a starting position, a point on
+    # a grid, and two vector k: k_1, k_2; defining the two direction of propagation
+    def __init__(self, width, height, pivot = [0, 0], start_radius = [1., 1.],\
+                    start_angle = 0., velocity = [1., 1.], acceleration = [0., 0.],\
+                    lifespan = None, style = 'random', display = False, saveToGif = False):
 
         # Initialize the grid dimentions
         self.width = width
@@ -30,7 +31,10 @@ class SphericalWave:
 
         # Set the pivot, radius and velocity
         self.pivot = pivot
-        self.radius = start_radius
+        self.a = start_radius[0]
+        self.b = start_radius[1]
+        self.angle = start_angle
+
         self.velocity = velocity
         self.acceleration = acceleration
 
@@ -44,9 +48,9 @@ class SphericalWave:
         self.savetoGif = saveToGif
         self.img_colletion = []
 
-
-    def updateWave(self, dt, style = 'random'):
-        self.radius += (dt * self.velocity + 0.5 *dt * dt * self.acceleration)
+    def updateWave(self, dt = 1.):
+        self.a += (dt * self.velocity[0] + 0.5 * dt * dt * self.acceleration[0])
+        self.b += (dt * self.velocity[1] + 0.5 * dt * dt * self.acceleration[1])
 
         self.time += 1
 
@@ -55,33 +59,37 @@ class SphericalWave:
                 raise ExpiredException
 
     def resetWave(self, style = 'random'):
-        # The wave is out of bounds, we need to reset it
+        # THe wave is out of bounds, we need to reset it
         if style == 'random':
             self.pivot[0] = np.random.uniform(0, self.width)
             self.pivot[1] = np.random.uniform(0, self.height)
 
-            self.radius = np.random.uniform(0.51, 3.)
+            self.a = np.random.uniform(0.51, 3.)
+            self.b = np.random.uniform(0.51, 3.)
 
-            self.velocity = np.random.uniform(0.1, 2.)
+            self.velocity[0] = np.random.uniform(0.1, 2.)
+            self.velocity[1] = np.random.uniform(0.1, 2.)
 
         else:
-            raise StyleException('Error in SphericalWave: style %s not supported', (style))
+            raise StyleException('Error in EllipticalWave: style %s not supported', (style))
 
-
-    def isWaveOn(self, pivot = [0, 0], radius = 1.):
+    def isWaveOn(self, pivot = [0, 0], radius = [1., 1.]):
         if pivot != [0, 0]:
             self.pivot = pivot
 
-        if radius != 1.:
-            self.radius = radius
+        if radius[0] != 1. or y_radius[0] != 1.:
+            self.a = radius[0]
+            self.b = radius[1]
 
-        if self.radius == 0:
-            self.radius = 0.01
+        if self.a == 0 and self.b == 0:
+            self.a = 0.01
+            self.b = 0.01
 
-        x = int(math.floor(pivot[0] + self.radius))
-        y = int(math.floor(pivot[1]))
 
-        r2 = self.radius * self.radius
+        angle = self.angle * 2 * np.pi / 360.
+
+        x = int(math.floor((pivot[0] + self.a * math.cos(angle))))
+        y = int(math.floor((pivot[1] + self.a * math.sin(angle))))
 
         temp_flag = False
         if (x in range(self.width) and y in range(self.height)):
@@ -96,27 +104,32 @@ class SphericalWave:
         stopFlag = True
         oneFound = False
 
-        while stopFlag:
+        cross = [[0, -1], [1, 0], [0, 1], [-1, 0]]
 
+        while stopFlag:
             # Our step, we built the supercover proceding with crosses
             # We are South-West of pivot
             if y - pivot[1] < 0 and x - pivot[0] < 0:
                 #         Left      Down   Right    Up
+                #print "SW", x, y, self.a, self.b
                 cross = [[-1, 0], [0, -1], [1, 0], [0, 1]]
 
             # We are South-Est
             elif y - pivot[1] < 0 and x - pivot[0] > 0:
                 #          Down    Right    Up     Left
+                #print "SE", x, y, self.a, self.b
                 cross = [[0, -1], [1, 0], [0, 1], [-1, 0]]
 
             # We are North-West
             elif y - pivot[1] > 0 and x - pivot[0] < 0:
                 #         Up      Left     Down    Right
+                #print "NW", x, y, self.a, self.b
                 cross = [[0, 1], [-1, 0], [0, -1], [1, 0]]
 
             # We are North-Est
             else:
                 #         Right    Up       Left    Down
+                #print "NE", x, y, self.a, self.b
                 cross = [[1, 0], [0, 1], [-1, 0], [0, -1]]
 
             for cross_ in cross:
@@ -129,14 +142,17 @@ class SphericalWave:
                 # Check the square in [x, y]
                 for i in [0, 1]:
                     for j in [0, 1]:
-                        tmp += -1 if ((x_ - pivot[0] + i)**2 + (y_ - pivot[1] + j)**2) < r2 else 1
+                        tmp += -1 if (((x_ - pivot[0] + i) * math.cos(angle) +\
+                                       (y_ - pivot[1] + j) * math.sin(angle))**2 / self.a**2 +\
+                                      ((x_ - pivot[0] + i) * math.sin(angle) -\
+                                       (y_ - pivot[1] + j) * math.cos(angle))**2 / self.b**2) < 1. else 1
 
                 key = "%d, %d" % (x_, y_)
                 if  key in seen:
                     stopFlag = False
 
                 else:
-                    # Check if circle has crossed this square
+                    # Check if ellipse has crossed this square
                     if tmp != -4 and tmp != 4:
                         x = x_
                         y = y_
@@ -146,6 +162,9 @@ class SphericalWave:
                         if (x in range(self.width) and y in range(self.height)):
                             self.isOn = np.append(self.isOn, [[x, y]], axis = 0)
                             oneFound = True
+
+                        # Bring the found direction to the top
+                        #cross.insert(0, cross.pop(cross.index(cross_)))
 
                         break
 
@@ -160,10 +179,13 @@ class SphericalWave:
 
         return self.isOn[1:].astype(int)
 
+
     def printWave(self, figure, axis):
 
-        circle = plt.Circle(self.pivot, self.radius, color = 'g', fill = False)
-        axis.add_artist(circle)
+        ellipse = Ellipse(xy = self.pivot, width = self.a * 2, height = self.b * 2,\
+                            angle = self.angle, color = 'g', fill = False)
+
+        axis.add_artist(ellipse)
 
         return figure, axis
 
@@ -179,11 +201,9 @@ class SphericalWave:
         plt.xlim(0, self.width)
         plt.ylim(0, self.height)
 
-        spacing = 1
-        minorLocator = MultipleLocator(spacing)
-        axis.xaxis.set_minor_locator(minorLocator)
-        axis.yaxis.set_minor_locator(minorLocator)
-        plt.grid(True, which = 'minor')
+        axis.set_xticks(range(0, self.width + 1))
+        axis.set_yticks(range(0, self.height + 1))
+        plt.grid()
         plt.show()
 
     def run(self, t):
@@ -191,13 +211,14 @@ class SphericalWave:
         temp = []
 
         for dt in range(t):
+
             try:
                 self.updateWave(1)
-                temp = self.isWaveOn(pivot = self.pivot, radius = self.radius)
+                temp = self.isWaveOn(pivot = self.pivot, radius = [self.a, self.b])
 
             except ExpiredException:
                 # We re-raise the exception
-                raise ExpiredException("SphericalWave %s has expired is lifespan." % self)
+                raise ExpiredException("EllipticalWave %s has expired is lifespan." % self)
 
             except IndexError:
                 if self.style != None:
@@ -206,16 +227,16 @@ class SphericalWave:
 
                     except StyleException:
                         # We re-raise the exception
-                        raise StyleException("SphericalWave %s has no style: %s" % (self, self.style))
+                        raise StyleException("EllipticallWave %s has no style: %s" % (self, self.style))
 
                     else:
-                        temp = self.isWaveOn(pivot = self.pivot, radius = self.radius)
+                        temp = self.isWaveOn(pivot = self.pivot, radius = [self.a, self.b])
 
                         self.grid[:, :] = 0
                         self.grid[temp[:, 0], temp[:, 1]] = 1
 
                 else:
-                    raise ExpiredException("SphericalWave %s has exit grid borders." % self)
+                    raise ExpiredException("EllipticalWave has exit grid borders.")
 
             else:
                 self.grid[:, :] = 0
@@ -226,13 +247,21 @@ class SphericalWave:
 
                 if self.savetoGif:
                     img = self._printWave()
-                    filename = "SphericalWave/frames/frame_" + str(self.time) + ".png"
+                    filename = "LinearWave/frames/frame_" + str(self.time) + ".png"
                     img.savefig(filename)
                     plt.close(img)
                     self.image_colletion.append(imageio.imread(filename))
+
 
         return temp
 
     # Create a gif of the hystory of the wave propagation
     def saveAsGif(self, filename):
         imageio.mimsave(filename, self.image_colletion)
+
+
+#width = 15
+#height = 10
+
+#wave = EllipticalWave(width, height, pivot = [5, 5], start_radius = [3.5, 5.7], start_angle = 150, display = True)
+#wave.run(50)

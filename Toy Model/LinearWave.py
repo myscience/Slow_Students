@@ -10,13 +10,16 @@ import imageio
 
 # Needed to handle exits properly
 import sys, traceback
+from CustomException import ExpiredException, StyleException
 
 class LinearWave:
 
     # We initialize a LinearWave by giving a starting position, a point on the
     # grid, and a vector k defining the normal to the linear wave front and the
     # direction of propagation. Optionally a velocity can be passed
-    def __init__(self, width, height, pivot=[0, 0],  k=[0, 1], velocity = .1):
+    def __init__(self, width, height, pivot=[0, 0],  angle = 0., velocity = .1,\
+                    acceleration = 0., style = 'random', lifespan = None, \
+                    display = False, saveToGif = False):
 
         # Initialize the grid dimentions
         self.width = width
@@ -26,15 +29,12 @@ class LinearWave:
         self.grid = np.zeros((width, height))
 
         # Set the k vector
-        if (k[0] == k[1] == 0):
-            print "Invalid k vector, re-setting to default"
-            self.k = [0, 1]
-        else:
-            self.k = k
+        self.k = [math.cos(angle), math.sin(angle)]
 
         # Set the pivot and velocity
         self.pivot = pivot
         self.velocity = velocity
+        self.acceleration = acceleration
 
         self.wave = np.zeros(1)
 
@@ -44,8 +44,14 @@ class LinearWave:
         self.y0 = 0.
         self.y1 = 0.
 
+        self.lifespan = lifespan
+        self.time = 0
+
+        self.style = style
+        self.display = display
+
         # Parameters needed for the .gif saving
-        self.savetoGif = False
+        self.savetoGif = saveToGif
         self.img_colletion = []
 
     def computeWave(self, pivot, k):
@@ -141,8 +147,10 @@ class LinearWave:
         if (dx == 0) and (dy == 0):
             n = 0
 
+        oneFound = False
         while n > 0:
             self.isOn = np.append(self.isOn, [[x, y]], axis = 0)
+            oneFound = True
 
             if (error > 0):
                 y += y_inc
@@ -153,40 +161,43 @@ class LinearWave:
 
             n -= 1
 
-        return self.isOn[1:]
+        if not oneFound:
+            raise IndexError
 
-    def updateWave(self, dt, style = 'random'):
-        self.pivot[0] += self.k[0] * dt * self.velocity
-        self.pivot[1] += self.k[1] * dt * self.velocity
+        return self.isOn[1:].astype(int)
 
-        # Check if wave is out of bound, is so we randomly regenerate one
-        if (self.pivot[0] < 0) or (self.pivot[0] >= self.width) or\
-           (self.pivot[1] < 0) or (self.pivot[1] >= self.height):
+    def updateWave(self, dt):
+        self.pivot[0] += self.k[0] * (dt * self.velocity + 0.5 * dt * dt * self.acceleration)
+        self.pivot[1] += self.k[1] * (dt * self.velocity + 0.5 * dt * dt * self.acceleration)
 
-           try:
-               if style == 'random':
-                   self.pivot[0] = np.random.uniform(0, self.width)
-                   self.pivot[1] = np.random.uniform(0, self.height)
-                   self.k[0] = np.random.uniform(-2, 2)
-                   self.k[1] = np.random.uniform(-2, 2)
+        self.time += 1
 
-               elif style == 'v_linear':
-                   self.pivot[0] = 0
-                   self.pivot[1] = self.height / 2
-                   self.k[0] = 1.
-                   self.k[1] = 0.
+        if self.lifespan != None:
+            if self.time > self.lifespan:
+                raise ExpiredException
 
-               elif style == 'h_linear':
-                   self.pivot[0] = self.width / 2
-                   self.pivot[1] = 0.
-                   self.k[0] = 0.
-                   self.k[1] = 1.
+    def resetWave(self, style = 'random'):
+        # The wave is out of bounds, we need to reset it
+       if style == 'random':
+           self.pivot[0] = np.random.uniform(0, self.width)
+           self.pivot[1] = np.random.uniform(0, self.height)
+           self.k[0] = np.random.uniform(-2, 2)
+           self.k[1] = np.random.uniform(-2, 2)
 
-               else:
-                   raise ValueError('Error in LinearWave: style %s not supported"', (style))
-           except ValueError as err:
-               traceback.print_exc(file=sys.stdout)
-               sys.exit(0)
+       elif style == 'v_linear':
+           self.pivot[0] = 0
+           self.pivot[1] = self.height / 2
+           self.k[0] = 1.
+           self.k[1] = 0.
+
+       elif style == 'h_linear':
+           self.pivot[0] = self.width / 2
+           self.pivot[1] = 0.
+           self.k[0] = 0.
+           self.k[1] = 1.
+
+       else:
+           raise StyleException('Error in LinearWave: style %s not supported"', (style))
 
     def printWave(self, figure, axis):
 
@@ -198,25 +209,81 @@ class LinearWave:
 
         return figure, axis
 
-    def run(self, t, style = 'random'):
+    def _printWave(self):
+        figure, axis = plt.subplots()
+
+        plt.imshow(self.grid, extent = (0, self.width, self.height, 0), interpolation='nearest', cmap = cm.coolwarm)
+        plt.colorbar()
+
+        figure, axis = self.printWave(figure, axis)
+
+        plt.xlim(0, self.width)
+        plt.ylim(0, self.height)
+
+        spacing = 1
+        minorLocator = MultipleLocator(spacing)
+        axis.xaxis.set_minor_locator(minorLocator)
+        axis.yaxis.set_minor_locator(minorLocator)
+        plt.grid(True, which = 'minor')
+        plt.show()
+
+    def run(self, t):
+        temp = []
+
         for dt in range(t):
-            self.updateWave(1, style)
-            self.computeWave(self.pivot, self.k)
 
-            temp = self.isWaveOn().astype(int)
+            try:
+                self.updateWave(1)
+                self.computeWave(self.pivot, self.k)
 
-        if self.savetoGif:
-            self.grid[:,:] = 0
-            self.grid[temp[:, 1], temp[:, 0]] = 1
+                temp = self.isWaveOn()
 
-            img = self.printWave()
-            filename = "frames/frame_" + str(self.time) + ".png"
-            img.savefig(filename)
-            plt.close(img)
-            self.image_colletion.append(imageio.imread(filename))
+            except ExpiredException:
+                raise ExpiredException("LinearWave %s has expired is lifespan." % self)
+
+            except IndexError:
+                if self.style != None:
+                    try:
+                        self.resetWave(self.style)
+
+                    except StyleException:
+                        # We re-raise the exception
+                        raise StyleException("LinearWave %s has no style: %s" % (self, self.style))
+
+                    else:
+                        self.computeWave(self.pivot, self.k)
+                        temp = self.isWaveOn()
+
+                        self.grid[:, :] = 0
+                        self.grid[temp[:, 0], temp[:, 1]] = 1
+
+                else:
+                    raise ExpiredException("LinearWave %s has exit grid borders." % self)
+            else:
+                self.grid[:, :] = 0
+                self.grid[temp[:, 0], temp[:, 1]] = 1
+
+                if self.display:
+                    self._printWave()
+
+                if self.savetoGif:
+                    img = self._printWave()
+                    filename = "LinearWave/frames/frame_" + str(self.time) + ".png"
+                    img.savefig(filename)
+                    plt.close(img)
+                    self.image_colletion.append(imageio.imread(filename))
 
         return temp
 
     # Create a gif of the hystory of the wave propagation
     def saveAsGif(self, filename):
         imageio.mimsave(filename, self.image_colletion)
+
+#width = 10
+#height = 10
+#wave = LinearWave(width, height, \
+#    pivot = [np.random.uniform(0, width), np.random.uniform(0, height)],\
+#    k = [np.random.uniform(-2, 2), np.random.uniform(-2, 2)], \
+#    velocity = np.random.uniform(0.1, 2), display = True )
+
+#wave.run(50)

@@ -37,6 +37,9 @@ class Neuron :
         # The raw signal the Neuron produce during the simulation
         self.raw_signal = np.zeros(1)
 
+        # Lookup table for up-transition, initialize to None
+        self.up_schedule = None
+
         # The time of the simulation
         self.time = 1
 
@@ -44,15 +47,43 @@ class Neuron :
         self.state = True
         self.up_time = self.time
 
+    def setActiveAt(self, up_trans):
+        self.up_schedule = up_trans
+        self.next_up_tran = self.up_schedule[0]
+
     def updateState(self):
         # We check if it's time to turn off the neuron
         if self.state:
             if self.time - self.up_time > self.max_up_time:
                 self.state = False;
 
+
     def stepSimulation(self):
         # We increase the time
         self.time = self.time + 1
+
+        # We check if it's time to switch on the neuron based on up_schedule
+        if self.up_schedule != None:
+            if self.time < self.next_up_tran:
+                # Keep waiting
+                pass
+
+            else:
+                # It's time to activate the Neuron
+                self.setActive()
+
+                # We try to grab the next_up_tran
+                try:
+                    if self.up_schedule:
+                        self.next_up_tran = self.up_schedule.pop(0)
+                    else:
+                        raise StopIteration
+
+                # We empty the up_schedule
+                except StopIteration:
+                    self.next_up_tran = None
+                    self.up_schedule = None
+
         self.updateState()
 
     def getTime(self):
@@ -64,18 +95,21 @@ class Neuron :
 
     def evaluateSignal(self):
         # The response function of the singol neuron
-        self.response = self.resp_heigh  * LogNorm(self.time, self.time / 10, sigma = 1.)
 
-        self.signal = np.convolve(self.raw_signal, self.response[:self.time], mode = "full")
+        # ATTENZIONE: Nel settaggio della funzione di risposta di è scelto 20 come parametro
+        #             ma è più per provare che per cognizione di causa
+        self.response = self.resp_heigh  * LogNorm(self.time, tmax = 20, sigma = 1.)
+
+        self.signal = np.convolve(self.raw_signal, self.response, mode = "full")
 
         return self.signal
 
-    def run(self, dt, eval = False, print_signal = False):
+    def run(self, dt, eval_ = False, print_signal = False):
         for i in range(dt):
             self.stepSimulation()
             self.updateRawSignal()
 
-        if eval :
+        if eval_:
             self.evaluateSignal()
 
         if print_signal:
@@ -100,6 +134,7 @@ def Landau(time, points):
     return 1. / np.sqrt(2 * np.pi) * np.exp(-1. * ((np.linspace(-5, time, num = points) +
                         np.exp(-1. * (np.linspace(-5, 15, num = points)))) / 2.))
 
-def LogNorm(points, time, mu = 0., sigma = 1.):
-    return np.reciprocal((np.linspace(1e-5, time, num = points))) / (sigma * np.sqrt(2 * np.pi)) *\
-     np.exp(-1. * (np.log(np.linspace(1e-5, time, num = points)) - mu)**2 / (2. * sigma * sigma))
+def LogNorm(points, tmax = 20, mu = 0., sigma = 1.):
+    #print points, time
+    return np.reciprocal((np.linspace(1e-5, tmax, num = points))) / (sigma * np.sqrt(2 * np.pi)) *\
+     np.exp(-1. * (np.log(np.linspace(1e-5, tmax, num = points)) - mu)**2 / (2. * sigma * sigma))
