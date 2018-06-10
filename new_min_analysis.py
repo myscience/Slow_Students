@@ -1,4 +1,4 @@
-# -*- coding: utf-8 -*-
+# Version 10/06/18
 
 #Library with all the functions to detect signal's minima and interpolate around them.
 
@@ -128,9 +128,15 @@ def min_to_matlab(min_collection):
 #range 'dist' around t
 #The value of each pixel, if a minimum is near enough, is 
 #the value that the interpolated parabola takes at time t
-def plot_wave(min_time, params, t, dist, rows = 40, columns = 50):  #ridondante passare clean_signals
+    
 # Typically params will be something as " min_analysis['params'] "
 # min_time something as " min_analysis['min_time'] "
+def plot_wave(min_time, params, t, dist, rows = 40, columns = 50, plot = False, time_depth = False):  
+# If plot = True the function saves the image under the name "wave_'t'_'dist'.png"
+# In the same path where this file is
+
+# If time_depth = True the only information used in calculating the depth 
+# of minima is the temporal distance for the observational time t
     import matplotlib.pyplot as plt
     import numpy as np
     
@@ -148,11 +154,34 @@ def plot_wave(min_time, params, t, dist, rows = 40, columns = 50):  #ridondante 
                 time_dist = [abs(z - t) for z in min_time[index]]
                 i = np.argmin(time_dist)
                 
-                if time_dist[i] < dist:
-                    #print(parabola(t, *params[index][i]), i, index)
-                    min_signal[x, y] = parabola(t, *params[index][i])
+                # Mi assicuto che il minimo ci sia stato prima del tempp t di osservazione
+                # seguo solo neuroni che si stanno accendendo, NON spegenendo
+                # Inoltre l'accensione deve essere occorsa in una finestra temporale 'dist' 
+                # precedente al tempo t
+                if (min_time[index][i] < t) & (time_dist[i] < dist):
+                    if time_depth:
+                    # Divido le profondità in 5 fasce temporali precedenti a t
+                    # se voglio N fasce ho 20 -> 100/N e 0.5 -> 0.N
+                        rel_dist = (time_dist[i]/dist)
+                        min_signal[x, y] = (int(int(rel_dist*100)/20)) / 10 - 0.5
+                    else:
+                    #Voglio allineare i minimi delle parabole alla stessa altezza
+                    #Calcolo il valore che assume al minimo
+                        y_min = parabola(min_time[index][i], *params[index][i])
+                    # Traslo il valore che la parabola assume in t di modo che
+                    # il suo minimo sia in -0.005 (vlore arbitrario)
+                        min_signal[x, y] = parabola(t, *params[index][i]) - (0.005 + y_min)
                 else:
                     min_signal[x, y] = 0
                     
-    plt.imshow(min_signal, interpolation = 'nearest')
-    plt.colorbar()
+    if plot:
+        plt.imshow(min_signal, interpolation = 'nearest')
+        plt.text(0.05, 2, 'Observation time = ' + "{:.2f}".format(t * 0.04) + 's')
+        plt.text(0.05, 39, 'Time window = ' + str(dist * 0.04) + 's')
+        plt.colorbar()
+        plt.savefig('wave_' + str(t) + '_' + str(dist) + '.png')
+    else:
+        plt.imshow(min_signal, interpolation = 'nearest')
+        plt.text(0.05, 2, 'Observation time = ' + "{:.2f}".format(t * 0.04) + 's')
+        plt.text(0.05, 39, 'Time window = ' + str(dist * 0.04) + 's')
+        plt.colorbar()
