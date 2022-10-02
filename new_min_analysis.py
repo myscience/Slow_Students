@@ -15,20 +15,22 @@
 
 #Sets output values of divisions as floating points, as in Python 3
 from __future__ import division
+from scipy.signal import argrelextrema
+
 
 #----------------------------------------------------
 
-def find_minimum(clean_signal, t_min, t_max):
-
-    min = []
-    #iter on time
-    for t in range(t_min,t_max):
-
-        if ((clean_signal[t-1]> clean_signal[t]) and (clean_signal[t]< clean_signal[t+1])):
-            #min[] contains indexes and clean_signals values where it has a minimum
-            min.append(t)
-
-    return min
+#def find_minimum(clean_signal, t_min, t_max):
+#
+#    min = []
+#    #iter on time
+#    for t in range(t_min,t_max):
+#
+#        if ((clean_signal[t-1]> clean_signal[t]) and (clean_signal[t]< clean_signal[t+1])):
+#            #min[] contains indexes and clean_signals values where it has a minimum
+#            min.append(t)
+#
+#    return min
 
 #-----------------------------------------------------
 
@@ -98,7 +100,8 @@ def min_analysis(clean_signals, points, t_min, t_max):
         for y in range(0,np.size(clean_signals,1)):
 
             clean_signals_xy = clean_signals[x][y]
-            time = find_minimum(clean_signals_xy, t_min, t_max)
+            time = argrelextrema(clean_signals_xy[t_min:t_max])
+            #time = find_minimum(clean_signals_xy, t_min, t_max)
 
             min_collection.append([x, y, time])
         
